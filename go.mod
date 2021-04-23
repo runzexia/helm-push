@@ -1,4 +1,4 @@
-module github.com/chartmuseum/helm-push
+module github.com/runzexia/helm-push
 
 go 1.15
 

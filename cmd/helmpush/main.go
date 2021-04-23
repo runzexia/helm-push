@@ -16,9 +16,9 @@ import (
 	"strconv"
 	"strings"
 
-	cm "github.com/chartmuseum/helm-push/pkg/chartmuseum"
-	"github.com/chartmuseum/helm-push/pkg/helm"
 	"github.com/ghodss/yaml"
+	cm "github.com/runzexia/helm-push/pkg/chartmuseum"
+	"github.com/runzexia/helm-push/pkg/helm"
 	"github.com/spf13/cobra"
 	"helm.sh/helm/v3/pkg/chartutil"
 	"helm.sh/helm/v3/pkg/cli"
@@ -32,7 +32,6 @@ import (
 type (
 	pushCmd struct {
 		chartName          string
-		appVersion         string
 		chartVersion       string
 		repoName           string
 		username           string
@@ -49,6 +48,7 @@ type (
 		insecureSkipVerify bool
 		keyring            string
 		dependencyUpdate   bool
+		timeoutSeconds     int64
 		out                io.Writer
 	}
 
@@ -111,7 +111,6 @@ func newPushCmd(args []string) *cobra.Command {
 	}
 	f := cmd.Flags()
 	f.StringVarP(&p.chartVersion, "version", "v", "", "Override chart version pre-push")
-	f.StringVarP(&p.appVersion, "app-version", "a", "", "Override app version pre-push")
 	f.StringVarP(&p.username, "username", "u", "", "Override HTTP basic auth username [$HELM_REPO_USERNAME]")
 	f.StringVarP(&p.password, "password", "p", "", "Override HTTP basic auth password [$HELM_REPO_PASSWORD]")
 	f.StringVarP(&p.accessToken, "access-token", "", "", "Send token in Authorization header [$HELM_REPO_ACCESS_TOKEN]")
@@ -125,7 +124,7 @@ func newPushCmd(args []string) *cobra.Command {
 	f.BoolVarP(&p.forceUpload, "force", "f", false, "Force upload even if chart version exists")
 	f.BoolVarP(&p.dependencyUpdate, "dependency-update", "d", false, `update dependencies from "requirements.yaml" to dir "charts/" before packaging`)
 	f.BoolVarP(&p.checkHelmVersion, "check-helm-version", "", false, `outputs either "2" or "3" indicating the current Helm major version`)
-
+	f.Int64VarP(&p.timeoutSeconds, "timeout", "", 30, "helm push timeout seconds")
 	f.Parse(args)
 
 	v2settings.AddFlags(f)
@@ -166,6 +165,9 @@ func (p *pushCmd) setFieldsFromEnv() {
 		p.insecureSkipVerify, _ = strconv.ParseBool(v)
 	}
 
+	if v, ok := os.LookupEnv("HELM_PUSH_TIMEOUT"); ok {
+		p.timeoutSeconds, _ = strconv.ParseInt(v, 10, 64)
+	}
 	if p.accessToken == "" {
 		p.setAccessTokenFromConfigFile()
 	}
@@ -264,11 +266,6 @@ func (p *pushCmd) push() error {
 		chart.SetVersion(p.chartVersion)
 	}
 
-	// app version override
-	if p.appVersion != "" {
-		chart.SetAppVersion(p.appVersion)
-	}
-
 	// username/password override(s)
 	username := repo.Config.Username
 	password := repo.Config.Password
@@ -303,6 +300,7 @@ func (p *pushCmd) push() error {
 		cm.CertFile(p.certFile),
 		cm.KeyFile(p.keyFile),
 		cm.InsecureSkipVerify(p.insecureSkipVerify),
+		cm.Timeout(p.timeoutSeconds),
 	)
 
 	if err != nil {
